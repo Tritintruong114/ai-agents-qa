@@ -1,0 +1,7 @@
+# Backend — pip install -r requirements.txt
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-dotenv>=1.0.0
+pydantic-ai>=0.0.14
+pydantic>=2.0.0
+textstat>=0.7.0

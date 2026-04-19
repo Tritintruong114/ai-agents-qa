@@ -1,0 +1,29 @@
+# Root — ai-agents-qa monorepo
+
+.DS_Store
+.idea/
+.vscode/
+
+# Backend
+backend/venv/
+backend/.env
+backend/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+backend/knowledge_base.db
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.vercel/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/*.tsbuildinfo
+
+# Env (never commit secrets)
+.env
+.env.*
+!.env.example
