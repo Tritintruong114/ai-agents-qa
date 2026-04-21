@@ -103,42 +103,32 @@ Dùng để **đo ổn định** model: mỗi case có verdict mong đợi (PASS
 
 Sơ đồ mô tả **đúng code hiện tại**. Các ô “Publish”, “Cho qua / rework / leo thang” là **gợi ý tích hợp** — **chưa** nối hệ thống ngoài PoC.
 
-*(Nếu màu mờ trên dark theme GitHub, thử chế độ sáng hoặc preview Mermaid ngoài GitHub.)*
-
 ### Sơ đồ tổng
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'lineColor': '#94a3b8', 'primaryTextColor': '#0f172a'}}}%%
 flowchart TD
-    classDef pass fill:#15803d,stroke:#052e16,color:#ffffff,stroke-width:3px;
-    classDef fail fill:#b91c1c,stroke:#450a0a,color:#ffffff,stroke-width:3px;
-    classDef warn fill:#c2410c,stroke:#431407,color:#ffffff,stroke-width:3px;
-    classDef db fill:#475569,stroke:#1e293b,color:#f8fafc,stroke-width:3px;
-    classDef neutral fill:#1d4ed8,stroke:#172554,color:#ffffff,stroke-width:3px;
-    classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
-    classDef decision fill:#6d28d9,stroke:#3b0764,color:#f5f3ff,stroke-width:3px;
 
     subgraph SRC["Nguồn dữ liệu"]
-        TC[(SQLite: draft + PRD)]:::db
-        UI[UI: cùng 6 case cố định]:::db
+        TC[(SQLite: draft + PRD)]
+        UI[UI: cùng 6 case cố định]
     end
 
     subgraph TRG["Kích hoạt"]
-        API["POST /api/evaluate/:id"]:::neutral
+        API["POST /api/evaluate/:id"]
     end
 
     TC --> API
     UI -.->|prd + id| API
 
     subgraph D08["Lớp 1 — Độ đọc (không LLM)"]
-        R1[Flesch–Kincaid trên draft]:::step
-        R2[PASS / WARNING / FAIL]:::step
+        R1[Flesch–Kincaid trên draft]
+        R2[PASS / WARNING / FAIL]
         R1 --> R2
     end
 
     subgraph D03["Lớp 2 — Tuân thủ SEC (LLM)"]
-        W[Ghép PRD + draft có thẻ tách]:::step
-        LLM[LLM → kết quả có schema]:::step
+        W[Ghép PRD + draft có thẻ tách]
+        LLM[LLM → kết quả có schema]
         W --> LLM
     end
 
@@ -146,24 +136,24 @@ flowchart TD
     API --> W
 
     subgraph MERGE["Gộp & kiểm tra"]
-        M[Verdict xấu nhất của 2 lớp]:::step
-        V{JSON đúng schema?}:::decision
-        CB[FAIL an toàn — circuit breaker]:::fail
+        M[Verdict xấu nhất của 2 lớp]
+        V{JSON đúng schema?}
+        CB[FAIL an toàn — circuit breaker]
     end
 
     R2 --> M
     LLM --> M
     M --> V
     V -->|Không| CB
-    V -->|Có| OUT[Ghi log + trả SSE]:::neutral
+    V -->|Có| OUT[Ghi log + trả SSE]
 
     subgraph ROUTE["Định tuyến gợi ý"]
-        SM{Shadow mode?}:::decision
-        SH[Chỉ ghi log]:::warn
-        P2{Verdict + tin cậy}:::decision
-        AP[Cho qua]:::pass
-        AR[Làm lại / rework]:::warn
-        ES[Leo thang người]:::warn
+        SM{Shadow mode?}
+        SH[Chỉ ghi log]
+        P2{Verdict + tin cậy}
+        AP[Cho qua]
+        AR[Làm lại / rework]
+        ES[Leo thang người]
     end
 
     OUT --> SM
@@ -174,9 +164,9 @@ flowchart TD
     P2 -->|Khác| ES
 
     subgraph UI2["UI demo"]
-        SSE[Stream kết quả]:::neutral
-        STAB[So khớp N lần với golden]:::step
-        PUB[Publish — giả lập]:::warn
+        SSE[Stream kết quả]
+        STAB[So khớp N lần với golden]
+        PUB[Publish — giả lập]
     end
 
     OUT --> SSE
@@ -190,28 +180,20 @@ flowchart TD
 
 ### Luồng nhỏ (chi tiết)
 
-Cùng **bảng màu** với sơ đồ tổng: xanh lá (pass), đỏ (fail), cam (warn), xám slate (db / bước), xanh dương (neutral), tím (quyết định).
+Cùng **kiểu sơ đồ** (flowchart / sequence) với mục tổng; bên dưới là các nhánh chi tiết.
 
 #### Chọn nội dung PRD (backend)
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'lineColor': '#94a3b8', 'primaryTextColor': '#0f172a'}}}%%
 flowchart LR
-    classDef pass fill:#15803d,stroke:#052e16,color:#ffffff,stroke-width:3px;
-    classDef fail fill:#b91c1c,stroke:#450a0a,color:#ffffff,stroke-width:3px;
-    classDef warn fill:#c2410c,stroke:#431407,color:#ffffff,stroke-width:3px;
-    classDef db fill:#475569,stroke:#1e293b,color:#f8fafc,stroke-width:3px;
-    classDef neutral fill:#1d4ed8,stroke:#172554,color:#ffffff,stroke-width:3px;
-    classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
-    classDef decision fill:#6d28d9,stroke:#3b0764,color:#f5f3ff,stroke-width:3px;
 
-    A[POST body có prd_context?]:::step --> B{Có chuỗi<br/>không rỗng?}:::decision
-    B -->|Có| U[Dùng PRD từ request]:::pass
-    B -->|Không / bỏ qua| D[Lấy prd_context<br/>trong SQLite theo id]:::db
-    D --> E{Có trong DB?}:::decision
-    E -->|Có| U2[Dùng PRD từ DB]:::pass
-    E -->|Trống| S[Sentinel “missing PRD”<br/>trong khối PRD_CONTEXT]:::warn
-    U --> M[_compliance_user_message]:::neutral
+    A[POST body có prd_context?] --> B{Có chuỗi<br/>không rỗng?}
+    B -->|Có| U[Dùng PRD từ request]
+    B -->|Không / bỏ qua| D[Lấy prd_context<br/>trong SQLite theo id]
+    D --> E{Có trong DB?}
+    E -->|Có| U2[Dùng PRD từ DB]
+    E -->|Trống| S[Sentinel “missing PRD”<br/>trong khối PRD_CONTEXT]
+    U --> M[_compliance_user_message]
     U2 --> M
     S --> M
 ```
@@ -223,7 +205,6 @@ flowchart LR
 #### Thứ tự sự kiện SSE (một lần gọi)
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'actorBkg':'#475569','actorBorder':'#1e293b','actorTextColor':'#f8fafc','signalColor':'#3b82f6','signalTextColor':'#0f172a','labelBoxBkgColor':'#1d4ed8','labelTextColor':'#ffffff','loopTextColor':'#57534e','activationBkgColor':'#57534e','activationBorderColor':'#292524','sequenceNumberColor':'#6d28d9'}}}%%
 sequenceDiagram
     participant C as Client UI
     participant A as FastAPI
@@ -249,16 +230,11 @@ sequenceDiagram
 #### Gộp hai lớp (worst wins)
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'lineColor': '#94a3b8', 'primaryTextColor': '#0f172a'}}}%%
 flowchart LR
-    classDef pass fill:#15803d,stroke:#052e16,color:#ffffff,stroke-width:3px;
-    classDef warn fill:#c2410c,stroke:#431407,color:#ffffff,stroke-width:3px;
-    classDef neutral fill:#1d4ed8,stroke:#172554,color:#ffffff,stroke-width:3px;
-    classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
 
-    A[Verdict độ đọc]:::step --> M[merge_compliance_status]:::neutral
-    B[Verdict SEC LLM]:::step --> M
-    M --> O[Verdict cuối:<br/>có FAIL → FAIL;<br/>không thì có WARNING → WARNING;<br/>không thì PASS]:::neutral
+    A[Verdict độ đọc] --> M[merge_compliance_status]
+    B[Verdict SEC LLM] --> M
+    M --> O[Verdict cuối:<br/>có FAIL → FAIL;<br/>không thì có WARNING → WARNING;<br/>không thì PASS]
 ```
 
 
@@ -268,19 +244,12 @@ Hai nhánh độc lập cùng đi vào một hàm so sánh; **không** phải pi
 #### Circuit breaker (schema)
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'lineColor': '#94a3b8', 'primaryTextColor': '#0f172a'}}}%%
 flowchart TD
-    classDef pass fill:#15803d,stroke:#052e16,color:#ffffff,stroke-width:3px;
-    classDef fail fill:#b91c1c,stroke:#450a0a,color:#ffffff,stroke-width:3px;
-    classDef warn fill:#c2410c,stroke:#431407,color:#ffffff,stroke-width:3px;
-    classDef neutral fill:#1d4ed8,stroke:#172554,color:#ffffff,stroke-width:3px;
-    classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
-    classDef decision fill:#6d28d9,stroke:#3b0764,color:#f5f3ff,stroke-width:3px;
 
-    T[Thử parse kết quả LLM<br/>thành QAEvaluationResult]:::step --> OK{Hợp lệ?}:::decision
-    OK -->|Có| N[Bình thường:<br/>merge + log + final_result]:::pass
-    OK -->|Không ValidationError| CB[Thay bằng CIRCUIT_BREAKER:<br/>FAIL cố định + reasoning lỗi schema]:::fail
-    CB --> M2[merge với độ đọc + log + final_result]:::neutral
+    T[Thử parse kết quả LLM<br/>thành QAEvaluationResult] --> OK{Hợp lệ?}
+    OK -->|Có| N[Bình thường:<br/>merge + log + final_result]
+    OK -->|Không ValidationError| CB[Thay bằng CIRCUIT_BREAKER:<br/>FAIL cố định + reasoning lỗi schema]
+    CB --> M2[merge với độ đọc + log + final_result]
 ```
 
 
@@ -292,24 +261,17 @@ Luồng SSE **không bị cắt im lặng**: client vẫn nhận `final_result` 
 **Lưu ý kiến trúc:** nhãn định tuyến được tính từ **verdict + confidence của LLM (trước khi merge độ đọc)** — không phải từ `compliance_status` đã gộp.
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'lineColor': '#94a3b8', 'primaryTextColor': '#0f172a'}}}%%
 flowchart TD
-    classDef pass fill:#15803d,stroke:#052e16,color:#ffffff,stroke-width:3px;
-    classDef fail fill:#b91c1c,stroke:#450a0a,color:#ffffff,stroke-width:3px;
-    classDef warn fill:#c2410c,stroke:#431407,color:#ffffff,stroke-width:3px;
-    classDef neutral fill:#1d4ed8,stroke:#172554,color:#ffffff,stroke-width:3px;
-    classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
-    classDef decision fill:#6d28d9,stroke:#3b0764,color:#f5f3ff,stroke-width:3px;
 
-    START([Verdict LLM + confidence_score]):::step --> SH{"shadow_mode bật?"}:::decision
-    SH -->|Có| L1[SHADOW_LOG_ONLY]:::warn
-    SH -->|Không| P{PASS?}:::decision
-    P -->|Có| L2[AUTO_PASS]:::pass
-    P -->|Không| F{"FAIL và conf từ 0.90?"}:::decision
-    F -->|Có| L3[AUTO_REWORK]:::warn
-    F -->|Không| W{"WARN hoặc FAIL, conf dưới 0.90?"}:::decision
-    W -->|Có| L4[ESCALATE_TO_KSL]:::warn
-    W -->|Không| L5[ESCALATE_TO_KSL]:::warn
+    START([Verdict LLM + confidence_score]) --> SH{"shadow_mode bật?"}
+    SH -->|Có| L1[SHADOW_LOG_ONLY]
+    SH -->|Không| P{PASS?}
+    P -->|Có| L2[AUTO_PASS]
+    P -->|Không| F{"FAIL và conf từ 0.90?"}
+    F -->|Có| L3[AUTO_REWORK]
+    F -->|Không| W{"WARN hoặc FAIL, conf dưới 0.90?"}
+    W -->|Có| L4[ESCALATE_TO_KSL]
+    W -->|Không| L5[ESCALATE_TO_KSL]
 ```
 
 
@@ -319,18 +281,12 @@ flowchart TD
 #### UI stability (N lần)
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'lineColor': '#94a3b8', 'primaryTextColor': '#0f172a'}}}%%
 flowchart LR
-    classDef pass fill:#15803d,stroke:#052e16,color:#ffffff,stroke-width:3px;
-    classDef fail fill:#b91c1c,stroke:#450a0a,color:#ffffff,stroke-width:3px;
-    classDef warn fill:#c2410c,stroke:#431407,color:#ffffff,stroke-width:3px;
-    classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
-    classDef decision fill:#6d28d9,stroke:#3b0764,color:#f5f3ff,stroke-width:3px;
 
-    S[Chọn case golden]:::step --> R[Run N lần POST evaluate]:::step
-    R --> C{Mỗi lần:<br/>compliance_status<br/>sau merge ==<br/>expectedVerdict?}:::decision
-    C -->|Đủ N lần khớp| OK[Publish nút có thể bật<br/>theo logic UI]:::pass
-    C -->|Lệch| X[Stability < 100%]:::warn
+    S[Chọn case golden] --> R[Run N lần POST evaluate]
+    R --> C{Mỗi lần:<br/>compliance_status<br/>sau merge ==<br/>expectedVerdict?}
+    C -->|Đủ N lần khớp| OK[Publish nút có thể bật<br/>theo logic UI]
+    C -->|Lệch| X[Stability < 100%]
 ```
 
 
@@ -348,18 +304,14 @@ flowchart LR
 
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': {'lineColor': '#94a3b8', 'primaryTextColor': '#0f172a'}}}%%
 flowchart LR
-    classDef db fill:#475569,stroke:#1e293b,color:#f8fafc,stroke-width:2px;
-    classDef neutral fill:#1d4ed8,stroke:#172554,color:#ffffff,stroke-width:2px;
-    classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
 
     subgraph POST["Một POST /api/evaluate/:id"]
-        K["Knobs: temp, prompt?, PRD?, shadow, model?"]:::step --> E[SSE pipeline]:::neutral
+        K["Knobs: temp, prompt?, PRD?, shadow, model?"] --> E[SSE pipeline]
     end
-    D[("DB: draft + PRD mặc định")]:::db --> E
-    E --> R["final_result × N (độc lập)"]:::step
-    R --> G["So golden expectedVerdict"]:::neutral
+    D[("DB: draft + PRD mặc định")] --> E
+    E --> R["final_result × N (độc lập)"]
+    R --> G["So golden expectedVerdict"]
 ```
 
 
