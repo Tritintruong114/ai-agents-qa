@@ -124,7 +124,7 @@ flowchart TD
     end
 
     subgraph TRG["Kích hoạt"]
-        API[POST /api/evaluate/{id}]:::neutral
+        API["POST /api/evaluate/:id"]:::neutral
     end
 
     TC --> API
@@ -230,7 +230,7 @@ sequenceDiagram
     participant R as Độ đọc FK
     participant L as LLM Pydantic AI
 
-    C->>A: POST /api/evaluate/{id}
+    C->>A: POST /api/evaluate/:id
     A->>R: tính Flesch–Kincaid trên draft
     A-->>C: SSE: readability_dimension
     A->>L: stream user message PRD+DRAFT
@@ -301,13 +301,13 @@ flowchart TD
     classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
     classDef decision fill:#6d28d9,stroke:#3b0764,color:#f5f3ff,stroke-width:3px;
 
-    START([Verdict LLM + confidence_score]):::step --> SH{shadow_mode<br/>== true?}:::decision
+    START([Verdict LLM + confidence_score]):::step --> SH{"shadow_mode bật?"}:::decision
     SH -->|Có| L1[SHADOW_LOG_ONLY]:::warn
-    SH -->|Không| P{status == PASS?}:::decision
+    SH -->|Không| P{PASS?}:::decision
     P -->|Có| L2[AUTO_PASS]:::pass
-    P -->|Không| F{status == FAIL<br/>và conf ≥ 0.9?}:::decision
+    P -->|Không| F{"FAIL và conf từ 0.90?"}:::decision
     F -->|Có| L3[AUTO_REWORK]:::warn
-    F -->|Không| W{(WARNING hoặc FAIL)<br/>và conf < 0.9?}:::decision
+    F -->|Không| W{"WARN hoặc FAIL, conf dưới 0.90?"}:::decision
     W -->|Có| L4[ESCALATE_TO_KSL]:::warn
     W -->|Không| L5[ESCALATE_TO_KSL]:::warn
 ```
@@ -354,8 +354,8 @@ flowchart LR
     classDef neutral fill:#1d4ed8,stroke:#172554,color:#ffffff,stroke-width:2px;
     classDef step fill:#57534e,stroke:#292524,color:#fafaf9,stroke-width:2px;
 
-    subgraph POST["Một POST /api/evaluate/{id}"]
-        K["Knobs: temp, prompt?, PRD?, shadow"]:::step --> E[SSE pipeline]:::neutral
+    subgraph POST["Một POST /api/evaluate/:id"]
+        K["Knobs: temp, prompt?, PRD?, shadow, model?"]:::step --> E[SSE pipeline]:::neutral
     end
     D[("DB: draft + PRD mặc định")]:::db --> E
     E --> R["final_result × N (độc lập)"]:::step
