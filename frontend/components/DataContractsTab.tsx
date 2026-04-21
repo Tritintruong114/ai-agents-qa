@@ -64,6 +64,35 @@ export function DataContractsTab() {
           </code>{" "}
           to prevent CI/CD pipeline crashes.
         </p>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-neutral-700">
+          <span className="font-semibold text-neutral-900">SSE / API:</span> The
+          stream&apos;s <code className="rounded border border-neutral-200 bg-neutral-50 px-1 font-mono text-xs">final_result</code>{" "}
+          merges these five fields with additional keys from{" "}
+          <code className="rounded border border-neutral-200 bg-neutral-50 px-1 font-mono text-xs">
+            backend/main.py
+          </code>{" "}
+          (for example{" "}
+          <code className="rounded border border-neutral-200 bg-neutral-50 px-1 font-mono text-xs">
+            readability_dimension
+          </code>
+          ,{" "}
+          <code className="rounded border border-neutral-200 bg-neutral-50 px-1 font-mono text-xs">
+            routing_decision
+          </code>
+          ,{" "}
+          <code className="rounded border border-neutral-200 bg-neutral-50 px-1 font-mono text-xs">
+            llm_compliance_status
+          </code>
+          ,{" "}
+          <code className="rounded border border-neutral-200 bg-neutral-50 px-1 font-mono text-xs">
+            llm_reasoning
+          </code>
+          ) — see{" "}
+          <code className="rounded border border-neutral-200 bg-neutral-50 px-1 font-mono text-xs">
+            _evaluate_response_payload
+          </code>
+          .
+        </p>
       </div>
 
       <div
@@ -100,7 +129,7 @@ export function DataContractsTab() {
 
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-black">
-          Canonical JSON shape
+          Field shape (reference — not strict JSON)
         </h3>
         <pre
           className="overflow-x-auto rounded-xl border-2 border-black bg-black p-4 text-sm leading-relaxed text-white shadow-sm"

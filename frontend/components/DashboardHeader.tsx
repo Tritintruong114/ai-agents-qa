@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { ApiDocsLinksOneLine } from "@/components/ApiDocsLinks";
+import { OpenAiKeyConfigModal } from "@/components/OpenAiKeyConfigModal";
 import { STABILITY_RUN_OPTIONS } from "@/lib/constants";
 
 type Props = {
@@ -16,6 +20,8 @@ export function DashboardHeader({
   onToggleAbTesting,
   runsBusy,
 }: Props) {
+  const [openAiKeyModal, setOpenAiKeyModal] = useState(false);
+
   return (
     <header className="border-b border-neutral-200 bg-white px-4 py-2 sm:px-6">
       <div className="flex min-h-8 flex-nowrap items-center justify-between gap-2 overflow-x-auto">
@@ -71,8 +77,19 @@ export function DashboardHeader({
               />
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => setOpenAiKeyModal(true)}
+            className="shrink-0 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[10px] font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50 sm:text-[11px]"
+          >
+            Config OpenAI key
+          </button>
         </div>
       </div>
+      <OpenAiKeyConfigModal
+        open={openAiKeyModal}
+        onClose={() => setOpenAiKeyModal(false)}
+      />
     </header>
   );
 }

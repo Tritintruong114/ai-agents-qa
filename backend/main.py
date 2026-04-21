@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -96,13 +96,51 @@ def _compliance_user_message(draft: str, *, prd_context: str | None = None) -> s
     )
 
 
-def _make_compliance_agent(system_prompt: str, model_id: str) -> Agent:
-    return Agent(
-        f"openai:{model_id}",
+def _openai_model_with_provider(api_key: str, model_id: str):
+    """Build an OpenAI-backed model using an explicit API key (per-request from UI)."""
+    try:
+        from pydantic_ai.providers.openai import OpenAIProvider
+    except ImportError as e:
+        raise ValueError(
+            "pydantic-ai OpenAI provider is missing; upgrade pydantic-ai with OpenAI extras."
+        ) from e
+    provider = OpenAIProvider(api_key=api_key.strip())
+    try:
+        from pydantic_ai.models.openai import OpenAIChatModel
+
+        return OpenAIChatModel(model_id, provider=provider)
+    except ImportError:
+        pass
+    try:
+        from pydantic_ai.models.openai import OpenAIModel
+
+        return OpenAIModel(model_id, provider=provider)
+    except ImportError as e:
+        raise ValueError(
+            "Could not import OpenAIChatModel or OpenAIModel from pydantic-ai."
+        ) from e
+
+
+def _make_compliance_agent(
+    system_prompt: str,
+    model_id: str,
+    openai_api_key: str | None = None,
+) -> Agent:
+    common = dict(
         output_type=QAEvaluationResult,
         system_prompt=system_prompt,
         defer_model_check=True,
     )
+    key = (openai_api_key or "").strip()
+    if key:
+        try:
+            model = _openai_model_with_provider(key, model_id)
+            return Agent(model, **common)
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"OpenAI client setup failed: {e}") from e
+    return Agent(f"openai:{model_id}", **common)
 
 
 CIRCUIT_BREAKER = QAEvaluationResult(
@@ -247,12 +285,17 @@ async def _stream_evaluate_events(
     is_shadow_mode: bool = True,
     prd_context: str | None = None,
     model_id: str = MODEL_NAME,
+    openai_api_key: str | None = None,
 ) -> AsyncIterator[str]:
     # Dimension 08: algorithmic readability (0 tokens, instant)
     readability = evaluate_readability_dimension(text_chunk)
     yield _sse_data({"readability_dimension": readability})
 
-    agent = _make_compliance_agent(system_prompt, model_id)
+    try:
+        agent = _make_compliance_agent(system_prompt, model_id, openai_api_key)
+    except ValueError as e:
+        yield _sse_data({"error": str(e)})
+        return
     user_message = _compliance_user_message(text_chunk, prd_context=prd_context)
     try:
         async with agent.run_stream(
@@ -441,6 +484,7 @@ async def evaluate_get(
 @app.post("/api/evaluate/{item_id}")
 async def evaluate_post(
     item_id: str,
+    request: Request,
     body: EvaluateBody = Body(...),
 ):
     key = _resolve_item_key(item_id)
@@ -456,6 +500,10 @@ async def evaluate_post(
         prd_effective = str(body.prd_context)
     else:
         prd_effective = _prd_from_item(item)
+    header_key = request.headers.get("x-openai-api-key") or request.headers.get(
+        "X-OpenAI-API-Key"
+    )
+    openai_api_key = header_key.strip() if header_key else None
     return _sse_response(
         _stream_evaluate_events(
             item,
@@ -466,5 +514,6 @@ async def evaluate_post(
             body.shadow_mode,
             prd_context=prd_effective,
             model_id=body.openai_model,
+            openai_api_key=openai_api_key,
         )
     )

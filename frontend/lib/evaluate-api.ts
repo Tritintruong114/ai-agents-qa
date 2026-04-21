@@ -1,4 +1,5 @@
 import { API_BASE, DEFAULT_OPENAI_MODEL } from "./constants";
+import { loadOpenAiApiKey } from "./openai-key-storage";
 import {
   evaluationFromApiBody,
   normalizeStatus,
@@ -52,12 +53,17 @@ export async function runSingleEvaluation(
   log: EvaluationLog | null;
 }> {
   const url = `${API_BASE}/api/evaluate/${encodeURIComponent(selectedId)}`;
+  const storedKey = loadOpenAiApiKey();
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    "Content-Type": "application/json",
+  };
+  if (storedKey?.trim()) {
+    headers["X-OpenAI-API-Key"] = storedKey.trim();
+  }
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      Accept: "text/event-stream",
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       temperature,
       system_prompt: systemPrompt,

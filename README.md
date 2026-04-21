@@ -2,16 +2,34 @@
 
 **Độc giả:** Architecture lead / quyết định ranh giới hệ thống.
 
+**Gợi ý công cụ AI:** Repo có thể **khởi tạo và phát triển** với mọi **AI coding IDE** (ví dụ [Cursor](https://cursor.com), VS Code + Copilot, Windsurf, …), **AI CLI** (Codex, Claude Code, …), và **Model Chat UI** (ChatGPT, Claude, Gemini, …) — tùy quy trình team. Không bắt buộc công cụ nào để **chạy** PoC: chỉ cần Node + Python như [Yêu cầu hệ thống](#yêu-cầu-hệ-thống).
+
 Đây là **PoC (proof of concept)**: một dịch vụ nhỏ giúp **soát câu chữ trong tài liệu** (draft) khi đã có **mô tả kỹ thuật** (PRD/spec), trong bối cảnh **SEC Rule 17a-4** và lưu trữ bất biến (WORM). Mục tiêu là thử nghiệm **một lớp “gatekeeper” bằng LLM** có output có cấu trúc, chứ **không** thay thế pháp lý, DLP, hay hệ thống lưu trữ thật.
 
 Tài liệu chi tiết cho kỹ sư: [docs/A2A_OVERVIEW.md](docs/A2A_OVERVIEW.md).
 
 ---
 
+## Cập nhật gần đây (UI & API)
+
+
+| Thay đổi                | Chi tiết                                                                                                                                                                                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chọn model OpenAI**   | Tab Evaluation: mỗi Variant có dropdown model (danh sách khớp allowlist backend). Mặc định `**gpt-4o`**. POST `/api/evaluate/{id}` gửi field JSON `**model**` (alias Pydantic: `openai_model`).                                                                |
+| **Config OpenAI key**   | Thanh header (cạnh Runs / A/B): nút **Config OpenAI key** mở modal nhỏ — key lưu **localStorage** (`ai-agents-qa.openai_api_key`), gửi kèm header `**X-OpenAI-API-Key`** khi evaluate. Không lưu key → backend dùng `**OPENAI_API_KEY**` trong `backend/.env`. |
+| **Stability score**     | Sau khi chạy đủ N lần: ngoài % khớp golden, hiển thị phần còn lại theo **WARNING / FAIL / other** (tỉ lệ và x/N). Emoji tổng hợp: có FAIL → 🔴; chỉ WARN/other → 🟡; toàn khớp → 🟢.                                                                           |
+| **Evaluation — layout** | Tiêu đề case lớn hơn; **Steps** và **Expected** xếp **một cột** (không chia hai cột).                                                                                                                                                                          |
+| **Evaluation trace**    | Khối audit chi tiết (Test meta, gates, telemetry) có thể **gấp / mở** (`<details>`) trong từng Variant.                                                                                                                                                        |
+| **Tab Data Contracts**  | Mô tả schema `**QAEvaluationResult`**; ghi rõ SSE `**final_result**` còn merge thêm `readability_dimension`, `routing_decision`, `llm_*` qua `_evaluate_response_payload` trong `backend/main.py`.                                                             |
+| **Schema LLM**          | `**QAEvaluationResult`** chỉ có 5 field: `evidence_quote`, `reasoning`, `is_ui_description`, `compliance_status`, `confidence_score` — **không** có `is_audit_caveat_missing` (nếu cần phải mở rộng Pydantic + prompt).                                        |
+
+
+---
+
 ## Phạm vi: làm gì / chưa làm gì
 
 
-| Đã có trong PoC                                             | Chưa có (đừng kỳ vọng)                           |
+| Đã có trong PoC                                             | Chưa có                                          |
 | ----------------------------------------------------------- | ------------------------------------------------ |
 | API đánh giá một draft + PRD, trả verdict có schema         | Chuỗi CI/CD, duyệt đa cấp, ticket Freshdesk thật |
 | Hai “thước đo”: **tuân thủ (LLM)** + **độ đọc (công thức)** | Saga, rollback tự động, bù transaction           |
@@ -71,7 +89,10 @@ Dùng để **đo ổn định** model: mỗi case có verdict mong đợi (PASS
 ## Giao diện demo (`http://localhost:3000`)
 
 - Sidebar: **kỳ vọng** từng case (PASS / WARNING / FAIL).
-- Trang Evaluation: hiển thị PRD + draft đúng như gửi judge; ô **Expected** tô màu theo verdict.
+- Trang Evaluation: hiển thị PRD + draft đúng như gửi judge; **Steps** + **Expected** một cột; ô **Expected** tô màu theo verdict.
+- Header: **Runs** (10 / 100 / 1000), toggle **A/B**, **Config OpenAI key** (modal lưu key trên trình duyệt).
+- Mỗi Variant: chọn **model OpenAI**, **temperature**, chạy stability **N lần**; heatmap + điểm ổn định (kèm phần WARNING/FAIL còn lại); trace audit có thể thu gọn.
+- Tab **Data Contracts**: contract output LLM (`QAEvaluationResult`) và ghi chú payload SSE đầy đủ.
 - Chạy **N lần:** tỉ lệ “ổn định” = bao nhiêu lần **khớp kỳ vọng** của case (không phải “cứ PASS là đúng” cho mọi case).
 
 ---
@@ -317,13 +338,13 @@ flowchart LR
 #### Luồng đa thay đổi (gọn)
 
 
-| Tầng              | Ý chính                                                                                                                                                               |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Một POST**      | Có thể đổi **cùng lúc** `temperature`, `system_prompt`, `prd_context`, `shadow_mode`. **Draft (`text_chunk`) luôn từ SQLite** theo `id` — không có field body ghi đè. |
-| **GET**           | Chỉ query `temperature` + `shadow_mode`. System prompt = `SYSTEM_PROMPT`; PRD = cột DB (hoặc rỗng → sentinel).                                                        |
-| **Nhiều lần gọi** | Stability **N×** / **A·B**: mỗi lần một SSE đầy đủ; so khớp golden = `compliance_status` **sau merge** với `expectedVerdict`.                                         |
-| **Repo**          | Sửa golden: đồng bộ `**frontend/lib/constants.ts`** + seed `**backend/database.py**`, restart API (upsert 1–6).                                                       |
-| **Không đổi**     | Thứ tự SSE, worst-of merge, circuit breaker, và **router dùng verdict LLM trước merge độ đọc** — dù tổ hợp knob thế nào.                                              |
+| Tầng              | Ý chính                                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Một POST**      | Có thể đổi **cùng lúc** `temperature`, `system_prompt`, `prd_context`, `shadow_mode`, `**model`** (id OpenAI). Tùy chọn: header `**X-OpenAI-API-Key**` (key từ UI). **Draft (`text_chunk`) luôn từ SQLite** theo `id` — không có field body ghi đè draft. |
+| **GET**           | Chỉ query `temperature` + `shadow_mode`. System prompt = `SYSTEM_PROMPT`; PRD = cột DB (hoặc rỗng → sentinel).                                                                                                                                            |
+| **Nhiều lần gọi** | Stability **N×** / **A·B**: mỗi lần một SSE đầy đủ; so khớp golden = `compliance_status` **sau merge** với `expectedVerdict`.                                                                                                                             |
+| **Repo**          | Sửa golden: đồng bộ `**frontend/lib/constants.ts`** + seed `**backend/database.py`**, restart API (upsert 1–6).                                                                                                                                           |
+| **Không đổi**     | Thứ tự SSE, worst-of merge, circuit breaker, và **router dùng verdict LLM trước merge độ đọc** — dù tổ hợp knob thế nào.                                                                                                                                  |
 
 
 ```mermaid
@@ -420,7 +441,7 @@ Nếu UI không gọi được API: CORS (origin dev) và `API_BASE` trong `fron
 ## Kiểm tra nhanh
 
 1. API: `curl -s http://localhost:8000/api/system-prompt | head` — có `system_prompt`.
-2. UI: **Live Demo** → chọn case → chạy đánh giá — có stream SSE và kết quả cuối (cần key hợp lệ).
+2. UI: **Live Demo** → chọn case → chạy đánh giá — có stream SSE và kết quả cuối (cần key hợp lệ: `.env` hoặc **Config OpenAI key** trên UI).
 3. Pitch: [docs/PITCH_DECK_CONTENT.md](docs/PITCH_DECK_CONTENT.md).
 
 ## Chất lượng mã
@@ -443,11 +464,11 @@ python -m compileall -q main.py contracts.py database.py readability.py && echo 
 ## Xử lý sự cố
 
 
-| Hiện tượng                 | Cách xử lý                                                                              |
-| -------------------------- | --------------------------------------------------------------------------------------- |
-| OpenAI 401                 | `OPENAI_API_KEY` trong `backend/.env`, restart `uvicorn`.                               |
-| Case 1–6 lệch sau khi pull | Restart API (seed ghi đè). Xóa `knowledge_base.db` nếu cần reset cả log.                |
-| Prompt UI lệch             | Xóa `localStorage` key `ai-agents-qa.system-prompt.v1` hoặc **Reset** trong tab Prompt. |
+| Hiện tượng                 | Cách xử lý                                                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI 401                 | Đặt `**OPENAI_API_KEY**` trong `backend/.env` và restart `uvicorn`, **hoặc** dùng **Config OpenAI key** trên UI (key lưu localStorage, gửi qua header). |
+| Case 1–6 lệch sau khi pull | Restart API (seed ghi đè). Xóa `knowledge_base.db` nếu cần reset cả log.                                                                                |
+| Prompt UI lệch             | Xóa `localStorage` key `ai-agents-qa.system-prompt.v1` hoặc **Reset** trong tab Prompt.                                                                 |
 
 
 ## Tài liệu thêm
