@@ -23,7 +23,8 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/*.tsbuildinfo
 
-# Env (never commit secrets)
+# Env — không commit file chứa secret (chỉ template .env.example)
 .env
 .env.*
 !.env.example
+!backend/.env.example
