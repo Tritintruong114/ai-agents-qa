@@ -8,12 +8,12 @@
 
 ## Slide 1 — Q1, Q2, Q3
 
-**Title:** Q1, Q2, Q3: The False Positive Trap & Policy-as-Code  
-**Subtitle:** Diagnosing Rubric-Induced Bias
+**Title:** Q1, Q2, Q3: The False-Positive Crisis & Semantic Contracts  
+**Subtitle:** Rubric-induced bias from keyword-only checks; evidence and reasoning before verdict
 
-- Q1 — Root cause: Keyword-based scanning flags UI elements indiscriminately.
-- Q2 — Rubric: Balanced rubric separates UI descriptions from WORM manipulation.
-- Q3 — Ops: Prompt tuning in the UI for continuous KSL control.
+- Q1 — Problem: ~81% false positives stem from rubric-induced bias—the legacy pipeline matched keywords mechanically with no understanding of on-screen UI context, so benign interface copy was flagged as risk.
+- Q2 & Q6 — Solution: Replace static rules with a semantic contract: Pydantic AI enforces structured outputs, and the evaluator runs at temperature 0.0 for stable, near-deterministic judgments.
+- Q3 — Execution: JSON Schema requires explicit evidence (grounded quotes) and step-by-step reasoning before any verdict, constraining choice-supportive bias (post-hoc justification of a preferred outcome).
 
 ---
 
@@ -32,7 +32,7 @@
 **Title:** Q6, Q7: Agent Specifications & Immutable Audit  
 **Subtitle:** Designing the Gatekeeper
 
-- Q6 — Determinism: Temperature 0 + strict JSON schemas for structured decision output.
+- Q6 — Agent layer: Pydantic AI agents operationalize the same semantic contract—typed tools, schema-validated responses, and temperature 0.0 at each gatekeeper hop.
 - Q7 — Audit: Algorithmic readability checks + LLM compliance; stored reasoning with merged dimensions.
 
 ---

@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { AntiPatternTab } from "@/components/AntiPatternTab";
 import { DashboardHeader } from "@/components/DashboardHeader";
+import { DataContractsTab } from "@/components/DataContractsTab";
 import { EvaluationTab } from "@/components/EvaluationTab";
 import { GlobalAppHeader } from "@/components/GlobalAppHeader";
 import { GoldenDatasetSidebar } from "@/components/GoldenDatasetSidebar";
@@ -21,7 +22,10 @@ import {
   clearStoredSystemPrompt,
   saveStoredSystemPrompt,
 } from "@/lib/system-prompt-storage";
-import { createInitialVariant, isAllPassRuns } from "@/lib/evaluation-helpers";
+import {
+  createInitialVariant,
+  isAllRunsMatchExpected,
+} from "@/lib/evaluation-helpers";
 import type {
   AntiPatternRow,
   AppMode,
@@ -71,27 +75,36 @@ export default function Home() {
 
   const runsBusy = variantA.loading || variantB.loading;
   const runStabilityVariant = useStabilityRunner(
-    selectedId,
+    selected,
     setVariantA,
     setVariantB,
   );
 
   const publishDisabled = useMemo(() => {
+    if (!selected) return true;
     if (variantA.loading) return true;
     if (abTestingMode && variantB.loading) return true;
     if (variantA.error || (abTestingMode && variantB.error)) return true;
     const lenOkA =
       variantA.runsHistory.length === stabilityRunCount &&
       variantA.progress >= stabilityRunCount;
-    if (!lenOkA || !isAllPassRuns(variantA.runsHistory)) return true;
+    if (
+      !lenOkA ||
+      !isAllRunsMatchExpected(variantA.runsHistory, selected.expectedVerdict)
+    )
+      return true;
     if (abTestingMode) {
       const lenOkB =
         variantB.runsHistory.length === stabilityRunCount &&
         variantB.progress >= stabilityRunCount;
-      if (!lenOkB || !isAllPassRuns(variantB.runsHistory)) return true;
+      if (
+        !lenOkB ||
+        !isAllRunsMatchExpected(variantB.runsHistory, selected.expectedVerdict)
+      )
+        return true;
     }
     return false;
-  }, [variantA, variantB, abTestingMode, stabilityRunCount]);
+  }, [selected, variantA, variantB, abTestingMode, stabilityRunCount]);
 
   const persistSystemPromptChange = useCallback((value: string) => {
     setSystemPrompt(value);
@@ -121,6 +134,7 @@ export default function Home() {
         v.temperature,
         stabilityRunCount,
         systemPrompt,
+        v.openaiModel,
       );
     },
     [
@@ -162,7 +176,9 @@ export default function Home() {
               <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 lg:px-8">
                 <MainTabBar mainTab={mainTab} onChange={setMainTab} />
 
-                {mainTab === "promptEngineering" ? (
+                {mainTab === "dataContracts" ? (
+                  <DataContractsTab />
+                ) : mainTab === "promptEngineering" ? (
                   <PromptEngineeringTab
                     systemPrompt={systemPrompt}
                     onSystemPromptChange={persistSystemPromptChange}

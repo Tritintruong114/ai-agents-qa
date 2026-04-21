@@ -79,6 +79,8 @@ export type AntiPatternRow = {
 };
 
 export type VariantState = {
+  /** OpenAI model id passed to `/api/evaluate` (e.g. gpt-4o). */
+  openaiModel: string;
   temperature: number;
   loading: boolean;
   evaluationResult: EvaluatePayload | null;
@@ -93,4 +95,8 @@ export type VariantState = {
 
 export type AppMode = "presentation" | "demo";
 
-export type MainTab = "evaluation" | "promptEngineering" | "antiPatterns";
+export type MainTab =
+  | "evaluation"
+  | "promptEngineering"
+  | "antiPatterns"
+  | "dataContracts";

@@ -1,3 +1,4 @@
+import { DEFAULT_OPENAI_MODEL } from "./constants";
 import type {
   ComplianceStatus,
   EvaluateApiSuccess,
@@ -69,9 +70,13 @@ export function normalizeStatus(value: unknown): ComplianceStatus | null {
   return value;
 }
 
-export function createInitialVariant(runCount: number): VariantState {
+export function createInitialVariant(
+  runCount: number,
+  openaiModel: string = DEFAULT_OPENAI_MODEL,
+): VariantState {
   const n = Math.max(1, runCount);
   return {
+    openaiModel,
     temperature: 0,
     loading: false,
     evaluationResult: null,
@@ -115,6 +120,85 @@ export function isAllPassRuns(history: RunSlot[]): boolean {
       x !== null &&
       String(x.compliance_status).trim().toUpperCase() === "PASS",
   );
+}
+
+/** Each run’s merged compliance_status must match the golden case’s expected verdict. */
+export function isAllRunsMatchExpected(
+  history: RunSlot[],
+  expected: string,
+): boolean {
+  if (history.length === 0) return false;
+  const exp = expected.trim().toUpperCase();
+  return history.every(
+    (x) =>
+      x !== null &&
+      String(x.compliance_status).trim().toUpperCase() === exp,
+  );
+}
+
+/** Per-run counts vs golden; non-matching runs bucketed by actual verdict. */
+export type StabilityVerdictBreakdown = {
+  matchCount: number;
+  warnCount: number;
+  failCount: number;
+  otherCount: number;
+};
+
+export function stabilityVerdictBreakdown(
+  history: RunSlot[],
+  expectedVerdict: string,
+): StabilityVerdictBreakdown {
+  const exp = expectedVerdict.trim().toUpperCase();
+  let matchCount = 0;
+  let warnCount = 0;
+  let failCount = 0;
+  let otherCount = 0;
+  for (const slot of history) {
+    if (slot === null) continue;
+    const s = String(slot.compliance_status).trim().toUpperCase();
+    if (s === exp) {
+      matchCount++;
+      continue;
+    }
+    if (s === "WARNING") warnCount++;
+    else if (s === "FAIL") failCount++;
+    else otherCount++;
+  }
+  return { matchCount, warnCount, failCount, otherCount };
+}
+
+/** Emoji for aggregate stability: FAIL dominates, then WARNING/other, then full match. */
+export function stabilityAggregateEmoji(b: StabilityVerdictBreakdown): string {
+  if (b.failCount > 0) return "🔴";
+  if (b.warnCount > 0 || b.otherCount > 0) return "🟡";
+  return "🟢";
+}
+
+/** Human-readable remainder line (WARN / FAIL / other %) for completed batches. */
+export function formatStabilityRemainderLine(
+  runCount: number,
+  b: StabilityVerdictBreakdown,
+): string {
+  const n = Math.max(runCount, 1);
+  const rest = b.warnCount + b.failCount + b.otherCount;
+  if (rest === 0) return "";
+  const parts: string[] = [];
+  if (b.warnCount > 0) {
+    parts.push(
+      `🟡 ${Math.round((b.warnCount / n) * 100)}% WARNING (${b.warnCount}/${n})`,
+    );
+  }
+  if (b.failCount > 0) {
+    parts.push(
+      `🔴 ${Math.round((b.failCount / n) * 100)}% FAIL (${b.failCount}/${n})`,
+    );
+  }
+  if (b.otherCount > 0) {
+    parts.push(
+      `⚪ ${Math.round((b.otherCount / n) * 100)}% other (${b.otherCount}/${n})`,
+    );
+  }
+  return parts.join(" · ");
 }
 
 export function heatmapDotClasses(runCount: number): {

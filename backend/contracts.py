@@ -18,10 +18,12 @@ class DimensionEvaluation(BaseModel):
 
 
 class QAEvaluationResult(BaseModel):
-    """Structured LLM gatekeeper output (Dimension 03 — SEC compliance)."""
+    """Structured LLM gatekeeper output (Dimension 03 — SEC compliance).
 
-    is_ui_description: bool
-    reasoning: str = Field(..., description="Detailed explanation in English.")
+    Field order is intentional: evidence and chain-of-thought precede verdict fields
+    so structured output reduces choice-supportive bias toward PASS/FAIL.
+    """
+
     evidence_quote: str = Field(
         ...,
         description=(
@@ -29,12 +31,25 @@ class QAEvaluationResult(BaseModel):
             "supporting the verdict; reduces hallucination risk."
         ),
     )
-    compliance_status: Literal["PASS", "WARNING", "FAIL"]
+    reasoning: str = Field(
+        ...,
+        description=(
+            "Chain-of-thought in English against SEC 17a-4; complete before implying verdict."
+        ),
+    )
+    is_ui_description: bool = Field(
+        ...,
+        description="True only if the draft strictly describes UI-local impact.",
+    )
+    compliance_status: Literal["PASS", "WARNING", "FAIL"] = Field(
+        ...,
+        description="Final SEC verdict; must follow evidence_quote and reasoning.",
+    )
     confidence_score: float = Field(
         ...,
         ge=0.0,
         le=1.0,
         description=(
-            "Confidence in the SEC verdict (0.0–1.0); used for calibration / routing (Q8)."
+            "Confidence in compliance_status (0.0–1.0); used for calibration / routing (Q8)."
         ),
     )

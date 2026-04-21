@@ -17,8 +17,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KSL QA Dashboard",
-  description: "Knowledge Systems Lead — QA evaluation và compliance",
+  title: "LeadXpert QA Agents System",
+  description: "QA evaluation demo",
 };
 
 export default function RootLayout({

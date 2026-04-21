@@ -124,9 +124,9 @@ def merge_qa_with_readability(llm: "QAEvaluationResult", readability: dict) -> "
         f"[Algorithm — {dim_label}]\n{algo_reason}"
     )
     return QAEvaluationResult(
-        is_ui_description=llm.is_ui_description,
-        reasoning=merged_reasoning,
         evidence_quote=llm.evidence_quote,
+        reasoning=merged_reasoning,
+        is_ui_description=llm.is_ui_description,
         compliance_status=merged_status,
         confidence_score=llm.confidence_score,
     )

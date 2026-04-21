@@ -1,12 +1,13 @@
 import { useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { runSingleEvaluation } from "@/lib/evaluate-api";
+import type { TestCase } from "@/lib/constants";
 import type { EvaluatePayload, RunSlot, VariantState } from "@/lib/types";
 
 type SetV = Dispatch<SetStateAction<VariantState>>;
 
 export function useStabilityRunner(
-  selectedId: string,
+  selected: TestCase | null,
   setVariantA: SetV,
   setVariantB: SetV,
 ) {
@@ -16,12 +17,14 @@ export function useStabilityRunner(
       temperature: number,
       runCount: number,
       judgeSystemPrompt: string,
+      openaiModel: string,
     ) => {
-      if (!selectedId) return;
+      if (!selected?.id) return;
       const setV = which === "a" ? setVariantA : setVariantB;
       const total = Math.max(1, runCount);
 
       setV({
+        openaiModel,
         temperature,
         loading: true,
         evaluationResult: null,
@@ -58,10 +61,12 @@ export function useStabilityRunner(
             : undefined;
 
           const { evaluation, meta, error, log } = await runSingleEvaluation(
-            selectedId,
+            selected.id,
             temperature,
             judgeSystemPrompt,
             onDelta,
+            selected.prdContext,
+            openaiModel,
           );
 
           if (error) {
@@ -90,6 +95,7 @@ export function useStabilityRunner(
         }
 
         setV({
+          openaiModel,
           temperature,
           loading: false,
           evaluationResult: lastEval,
@@ -110,6 +116,6 @@ export function useStabilityRunner(
         setV((s) => ({ ...s, loading: false, error: message }));
       }
     },
-    [selectedId, setVariantA, setVariantB],
+    [selected, setVariantA, setVariantB],
   );
 }

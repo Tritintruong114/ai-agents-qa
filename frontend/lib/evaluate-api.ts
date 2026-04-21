@@ -1,4 +1,4 @@
-import { API_BASE } from "./constants";
+import { API_BASE, DEFAULT_OPENAI_MODEL } from "./constants";
 import {
   evaluationFromApiBody,
   normalizeStatus,
@@ -43,6 +43,8 @@ export async function runSingleEvaluation(
   temperature: number,
   systemPrompt: string,
   onReasoningDelta?: (delta: string) => void,
+  prdContext?: string,
+  openaiModel: string = DEFAULT_OPENAI_MODEL,
 ): Promise<{
   evaluation: EvaluatePayload | null;
   meta: StreamMeta | null;
@@ -60,6 +62,10 @@ export async function runSingleEvaluation(
       temperature,
       system_prompt: systemPrompt,
       shadow_mode: true,
+      model: openaiModel,
+      ...(prdContext != null && prdContext !== ""
+        ? { prd_context: prdContext }
+        : {}),
     }),
   });
 

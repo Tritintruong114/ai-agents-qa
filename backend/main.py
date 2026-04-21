@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from pydantic_ai import Agent
 
 from contracts import QAEvaluationResult
@@ -21,7 +21,20 @@ from readability import evaluate_readability_dimension, merge_qa_with_readabilit
 
 load_dotenv()
 
-MODEL_NAME = "gpt-4o-mini"
+MODEL_NAME = "gpt-4o"
+
+ALLOWED_OPENAI_MODELS = frozenset(
+    {
+        "gpt-4o-mini",
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-4-turbo",
+        "gpt-4",
+        "o4-mini",
+        "o3-mini",
+        "o1-mini",
+    }
+)
 
 SYSTEM_PROMPT = """[Dimension 03 · SEC 17a-4 — Semantic Gate + Adversarial QA — SYSTEM]
 
@@ -68,10 +81,24 @@ Reasoning and evidence_quote are mandatory. Strictly adhere to the Output Contra
 
 CONFIDENCE (required): confidence_score must be a float from 0.0 to 1.0 — your confidence in compliance_status (0.0 = no confidence, 1.0 = very confident).\n"""
 
+_MISSING_PRD_SENTINEL = (
+    "(none provided — if PRD evidence is required for a safe PASS, state 'missing PRD' in reasoning.)"
+)
 
-def _make_compliance_agent(system_prompt: str) -> Agent:
+
+def _compliance_user_message(draft: str, *, prd_context: str | None = None) -> str:
+    """Wrap draft (+ optional PRD) in XML-like delimiters so instructions and data stay separated."""
+    prd_block = (prd_context or "").strip() or _MISSING_PRD_SENTINEL
+    return (
+        "Analyze the following inputs.\n\n"
+        f"<PRD_CONTEXT>\n{prd_block}\n</PRD_CONTEXT>\n\n"
+        f"<DRAFT>\n{draft}\n</DRAFT>"
+    )
+
+
+def _make_compliance_agent(system_prompt: str, model_id: str) -> Agent:
     return Agent(
-        f"openai:{MODEL_NAME}",
+        f"openai:{model_id}",
         output_type=QAEvaluationResult,
         system_prompt=system_prompt,
         defer_model_check=True,
@@ -79,9 +106,9 @@ def _make_compliance_agent(system_prompt: str) -> Agent:
 
 
 CIRCUIT_BREAKER = QAEvaluationResult(
-    is_ui_description=False,
-    reasoning="AI response failed schema validation (circuit breaker).",
     evidence_quote="",
+    reasoning="AI response failed schema validation (circuit breaker).",
+    is_ui_description=False,
     compliance_status="FAIL",
     confidence_score=0.0,
 )
@@ -97,12 +124,33 @@ _ITEM_ALIASES = {
 
 
 class EvaluateBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     temperature: float = Field(0.0, ge=0.0, le=2.0)
     system_prompt: str | None = None
+    prd_context: str | None = Field(
+        None,
+        description="Optional PRD / spec text; overrides DB when set. Wrapped in <PRD_CONTEXT> for the agent.",
+    )
     shadow_mode: bool = Field(
         True,
         description="True = phase 1 (log routing only). False = dynamic thresholds + enforcement.",
     )
+    openai_model: str = Field(
+        default=MODEL_NAME,
+        alias="model",
+        description="OpenAI model id (e.g. gpt-4o). JSON key: model.",
+    )
+
+    @field_validator("openai_model")
+    @classmethod
+    def _validate_openai_model(cls, v: str) -> str:
+        m = v.strip()
+        if m not in ALLOWED_OPENAI_MODELS:
+            raise ValueError(
+                f"Unsupported model {m!r}. Allowed: {sorted(ALLOWED_OPENAI_MODELS)}"
+            )
+        return m
 
 
 def calibration_router(
@@ -183,6 +231,13 @@ def _effective_system_prompt(system_prompt: str | None) -> str:
     return stripped if stripped else SYSTEM_PROMPT
 
 
+def _prd_from_item(item: dict) -> str | None:
+    raw = item.get("prd_context")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    return raw
+
+
 async def _stream_evaluate_events(
     item: dict,
     key: str,
@@ -190,15 +245,18 @@ async def _stream_evaluate_events(
     temperature: float,
     system_prompt: str,
     is_shadow_mode: bool = True,
+    prd_context: str | None = None,
+    model_id: str = MODEL_NAME,
 ) -> AsyncIterator[str]:
     # Dimension 08: algorithmic readability (0 tokens, instant)
     readability = evaluate_readability_dimension(text_chunk)
     yield _sse_data({"readability_dimension": readability})
 
-    agent = _make_compliance_agent(system_prompt)
+    agent = _make_compliance_agent(system_prompt, model_id)
+    user_message = _compliance_user_message(text_chunk, prd_context=prd_context)
     try:
         async with agent.run_stream(
-            text_chunk,
+            user_message,
             model_settings={"temperature": temperature},
         ) as result:
             prev_reasoning = ""
@@ -245,7 +303,7 @@ async def _stream_evaluate_events(
             yield _sse_data(
                 {
                     "final_result": final_body,
-                    "model_name": MODEL_NAME,
+                    "model_name": model_id,
                     "temperature": temperature,
                     "audit_log_id": audit_log_id,
                     "usage": {
@@ -285,7 +343,7 @@ async def _stream_evaluate_events(
         yield _sse_data(
             {
                 "final_result": final_body,
-                "model_name": MODEL_NAME,
+                "model_name": model_id,
                 "temperature": temperature,
                 "audit_log_id": audit_log_id,
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0},
@@ -369,7 +427,13 @@ async def evaluate_get(
     text_chunk = item.get("text_chunk", "")
     return _sse_response(
         _stream_evaluate_events(
-            item, key, text_chunk, temperature, SYSTEM_PROMPT, shadow_mode
+            item,
+            key,
+            text_chunk,
+            temperature,
+            SYSTEM_PROMPT,
+            shadow_mode,
+            prd_context=_prd_from_item(item),
         )
     )
 
@@ -388,6 +452,10 @@ async def evaluate_post(
         )
     text_chunk = item.get("text_chunk", "")
     effective = _effective_system_prompt(body.system_prompt)
+    if body.prd_context is not None and str(body.prd_context).strip() != "":
+        prd_effective = str(body.prd_context)
+    else:
+        prd_effective = _prd_from_item(item)
     return _sse_response(
         _stream_evaluate_events(
             item,
@@ -396,5 +464,7 @@ async def evaluate_post(
             body.temperature,
             effective,
             body.shadow_mode,
+            prd_context=prd_effective,
+            model_id=body.openai_model,
         )
     )

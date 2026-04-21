@@ -5,7 +5,12 @@ import {
   gateBadgeClass,
   overallEmoji,
 } from "./evaluation-trace-utils";
-import { normalizeStatus } from "@/lib/evaluation-helpers";
+import {
+  formatStabilityRemainderLine,
+  normalizeStatus,
+  stabilityAggregateEmoji,
+  type StabilityVerdictBreakdown,
+} from "@/lib/evaluation-helpers";
 import type { EvaluatePayload } from "@/lib/types";
 import type { TestCase } from "@/lib/constants";
 
@@ -19,7 +24,8 @@ type Props = {
   runCount: number;
   temperature: number;
   stabilityPct: number | null;
-  passCount: number;
+  goldenMatchCount: number;
+  stabilityBreakdown: StabilityVerdictBreakdown;
   data: EvaluatePayload;
   snapshotPromptTokens: number;
   snapshotCompletionTokens: number;
@@ -34,7 +40,8 @@ export function EvaluationTraceDashboard({
   runCount,
   temperature,
   stabilityPct,
-  passCount,
+  goldenMatchCount,
+  stabilityBreakdown,
   data,
   snapshotPromptTokens,
   snapshotCompletionTokens,
@@ -50,19 +57,13 @@ export function EvaluationTraceDashboard({
   const llmText = fallbackLlmReasoning(data.reasoning, data.llm_reasoning);
   const auditSummary = buildAuditSummaryLine(data, overall);
   const primaryModel = modelLabel ?? "LLM (Pydantic AI)";
+  const stabilityRemainderLine = formatStabilityRemainderLine(
+    runCount,
+    stabilityBreakdown,
+  );
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-neutral-200 bg-gradient-to-b from-slate-50/80 to-white px-4 py-3 shadow-sm">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">
-          Evaluation trace
-        </p>
-        <h3 className="mt-1 text-base font-semibold tracking-tight text-neutral-900">
-          CASE-{testCase.id}{" "}
-          <span className="font-normal text-neutral-600">({testCase.title})</span>
-        </h3>
-      </div>
-
       {/* 1 · Test meta */}
       <section
         className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm"
@@ -116,10 +117,17 @@ export function EvaluationTraceDashboard({
               <dd className="mt-0.5 text-sm font-semibold text-neutral-900">
                 {stabilityPct !== null ? (
                   <>
-                    <span className="text-emerald-600" aria-hidden>
-                      🟢{" "}
+                    <span aria-hidden>
+                      {stabilityAggregateEmoji(stabilityBreakdown)}{" "}
                     </span>
-                    {stabilityPct}% ({passCount}/{runCount} PASS)
+                    {stabilityPct}% ({goldenMatchCount}/{runCount} match{" "}
+                    {testCase.expectedVerdict})
+                    {stabilityRemainderLine ? (
+                      <span className="font-normal text-neutral-600">
+                        {" "}
+                        · {stabilityRemainderLine}
+                      </span>
+                    ) : null}
                   </>
                 ) : (
                   "—"

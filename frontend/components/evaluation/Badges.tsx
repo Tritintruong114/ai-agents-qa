@@ -1,5 +1,5 @@
 import type { ComplianceStatus } from "@/lib/types";
-import type { OldVerdict } from "@/lib/constants";
+import type { GoldenExpectedVerdict } from "@/lib/constants";
 
 export function ComplianceBadge({
   status,
@@ -32,18 +32,23 @@ export function ComplianceBadge({
   );
 }
 
-export function OldVerdictBadge({ verdict }: { verdict: OldVerdict }) {
-  const fail = verdict === "FAIL";
+export function GoldenExpectedBadge({
+  verdict,
+}: {
+  verdict: GoldenExpectedVerdict;
+}) {
+  const styles =
+    verdict === "PASS"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : verdict === "WARNING"
+        ? "border-amber-200 bg-amber-50 text-amber-950"
+        : "border-red-200 bg-red-50 text-red-900";
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded border px-1 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide ${
-        fail
-          ? "border-red-200 bg-red-50 text-red-800"
-          : "border-emerald-200 bg-emerald-50 text-emerald-800"
-      }`}
-      title="Legacy agent verdict (baseline)"
+      className={`inline-flex shrink-0 items-center rounded border px-1 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide ${styles}`}
+      title="Golden dataset — expected judge verdict"
     >
-      Old: {verdict}
+      Exp: {verdict}
     </span>
   );
 }

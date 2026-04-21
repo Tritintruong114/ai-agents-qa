@@ -1,9 +1,16 @@
+import { useId } from "react";
 import {
   evaluationLogToPayload,
+  formatStabilityRemainderLine,
   resolvedSnapshotIndex,
+  stabilityAggregateEmoji,
+  stabilityVerdictBreakdown,
 } from "@/lib/evaluation-helpers";
+import {
+  OPENAI_EVAL_MODEL_OPTIONS,
+  type TestCase,
+} from "@/lib/constants";
 import type { EvaluatePayload, VariantState } from "@/lib/types";
-import type { TestCase } from "@/lib/constants";
 import { EvaluationTraceDashboard } from "./EvaluationTraceDashboard";
 import { StabilityDots } from "./StabilityDots";
 
@@ -13,6 +20,7 @@ type Props = {
   state: VariantState;
   runCount: number;
   onTemperatureChange: (t: number) => void;
+  onOpenaiModelChange: (modelId: string) => void;
   onRun: () => void;
   onSelectSnapshotRun?: (runIndex: number) => void;
 };
@@ -23,19 +31,24 @@ export function JudgeVariantPanel({
   state,
   runCount,
   onTemperatureChange,
+  onOpenaiModelChange,
   onRun,
   onSelectSnapshotRun,
 }: Props) {
+  const modelFieldId = useId();
   const busy = state.loading;
   const n = Math.max(runCount, 1);
-  const passCount = state.runsHistory.filter(
+  const golden = testCase.expectedVerdict;
+  const goldenMatchCount = state.runsHistory.filter(
     (x) =>
       x !== null &&
-      String(x.compliance_status).trim().toUpperCase() === "PASS",
+      String(x.compliance_status).trim().toUpperCase() === golden,
   ).length;
+  const verdictBreakdown = stabilityVerdictBreakdown(state.runsHistory, golden);
+  const stabilityRemainderLine = formatStabilityRemainderLine(n, verdictBreakdown);
   const stabilityPct =
     state.progress >= n && !busy && !state.error
-      ? Math.round((passCount / n) * 100)
+      ? Math.round((goldenMatchCount / n) * 100)
       : null;
 
   const snapshotDone =
@@ -69,6 +82,27 @@ export function JudgeVariantPanel({
               `Run ${n}x Stability Test`
             )}
           </button>
+        </div>
+        <div className="mt-3">
+          <label
+            htmlFor={modelFieldId}
+            className="text-xs font-medium text-neutral-600"
+          >
+            OpenAI model
+          </label>
+          <select
+            id={modelFieldId}
+            value={state.openaiModel}
+            disabled={busy}
+            onChange={(e) => onOpenaiModelChange(e.target.value)}
+            className="mt-1.5 w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-2 font-mono text-xs text-neutral-900 shadow-sm outline-none focus:border-[#0066ff] focus:ring-1 focus:ring-[#0066ff] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {OPENAI_EVAL_MODEL_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="mt-3">
           <div className="flex items-center justify-between gap-2 text-xs text-neutral-600">
@@ -123,7 +157,16 @@ export function JudgeVariantPanel({
           </div>
           {stabilityPct !== null && (
             <p className="mt-2 text-xs font-medium text-neutral-800">
-              Stability: {stabilityPct}% ({passCount}/{n} PASS)
+              <span className="mr-1" aria-hidden>
+                {stabilityAggregateEmoji(verdictBreakdown)}
+              </span>
+              Stability: {stabilityPct}% ({goldenMatchCount}/{n} match {golden})
+              {stabilityRemainderLine ? (
+                <span className="font-normal text-neutral-600">
+                  {" "}
+                  · {stabilityRemainderLine}
+                </span>
+              ) : null}
             </p>
           )}
         </div>
@@ -168,24 +211,44 @@ export function JudgeVariantPanel({
         )}
 
         {snapshotEval && snapshotDone && (
-          <EvaluationTraceDashboard
-            testCase={testCase}
-            runIndex1Based={snapIdx + 1}
-            runCount={n}
-            temperature={state.temperature}
-            stabilityPct={stabilityPct}
-            passCount={passCount}
-            data={snapshotEval}
-            snapshotPromptTokens={snapLog?.prompt_tokens ?? 0}
-            snapshotCompletionTokens={snapLog?.completion_tokens ?? 0}
-            totalPromptTokens={state.totalTokens.prompt}
-            totalCompletionTokens={state.totalTokens.completion}
-            modelLabel={
-              state.evalMeta?.model_name
-                ? `${state.evalMeta.model_name}`
-                : undefined
-            }
-          />
+          <details className="group rounded-xl border border-neutral-200 bg-white shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-neutral-900 transition hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
+              <span className="min-w-0 truncate">
+                Evaluation trace
+                <span className="font-normal text-neutral-500">
+                  {" "}
+                  · snapshot run {snapIdx + 1}/{n}
+                </span>
+              </span>
+              <span
+                className="shrink-0 text-neutral-400 transition group-open:rotate-180"
+                aria-hidden
+              >
+                ▼
+              </span>
+            </summary>
+            <div className="border-t border-neutral-100 px-3 pb-3 pt-1">
+              <EvaluationTraceDashboard
+                testCase={testCase}
+                runIndex1Based={snapIdx + 1}
+                runCount={n}
+                temperature={state.temperature}
+                stabilityPct={stabilityPct}
+                goldenMatchCount={goldenMatchCount}
+                stabilityBreakdown={verdictBreakdown}
+                data={snapshotEval}
+                snapshotPromptTokens={snapLog?.prompt_tokens ?? 0}
+                snapshotCompletionTokens={snapLog?.completion_tokens ?? 0}
+                totalPromptTokens={state.totalTokens.prompt}
+                totalCompletionTokens={state.totalTokens.completion}
+                modelLabel={
+                  state.evalMeta?.model_name
+                    ? `${state.evalMeta.model_name}`
+                    : undefined
+                }
+              />
+            </div>
+          </details>
         )}
       </div>
 

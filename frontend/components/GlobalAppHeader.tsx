@@ -1,4 +1,3 @@
-import { ApiDocsLinks } from "@/components/ApiDocsLinks";
 import type { AppMode } from "@/lib/types";
 
 type Props = {
@@ -12,9 +11,8 @@ export function GlobalAppHeader({ appMode, onAppModeChange }: Props) {
       <div className="mx-auto flex max-w-[1920px] flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
         <div className="min-w-0 flex-1">
           <span className="text-sm font-medium text-neutral-900 sm:text-base">
-            LeapXpert KSL PoC
+            LeadXpert QA Agents System
           </span>
-          <ApiDocsLinks />
         </div>
 
         <div className="flex shrink-0 gap-2 lg:pt-0.5">

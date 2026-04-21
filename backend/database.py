@@ -6,51 +6,66 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "knowledge_base.db"
 
-# Hardcoded seed — same 6 cases as former mock_data.json + title + expected_verdict
-_SEED_ROWS: list[tuple[str, str, str, str, str]] = [
+# Golden dataset — SEC 17a-4 WORM semantic harness (PRD + draft per case).
+# Columns: id, title (case_description), category, text_chunk (draft_text),
+#          expected_verdict, prd_context
+_SEED_ROWS: list[tuple[str, str, str, str, str, str]] = [
     (
         "1",
-        "UI Deletion Button",
-        "false_positive",
-        "The “Delete message” control is in the top-right of the screen. An admin can tap it to hide the message from the current workspace view.",
+        "UI-only hide/delete; archive untouched",
+        "golden_pass",
+        "Users can swipe to hide or delete this message from their mobile chat screen.",
         "PASS",
+        "Messages are hidden from the local mobile view but remain in the SEC WORM archive for 7 years.",
     ),
     (
         "2",
-        "Retention Clock (IT Jargon)",
-        "false_positive",
-        "The system retention clock starts when a message is loaded into the UI buffer.",
+        '"Purge" is device cache only, not the vault',
+        "golden_pass",
+        "The app purges local cache to free up device storage.",
         "PASS",
+        "Local cache clears every 24h. Core vault remains untouched.",
     ),
     (
         "3",
-        "Display Retention Window (View Config)",
-        "false_positive",
-        "Admins can set the displayed retention period on the app screen between 30 and 90 days.",
-        "PASS",
+        "Legally ambiguous wording",
+        "golden_warning",
+        "The system uses a retention clock to track message storage.",
+        "WARNING",
+        "Retention period starts from message creation.",
     ),
     (
         "4",
-        "WORM Data Deletion (SEC 17a-4 Violation)",
-        "true_positive",
-        "The system allows senior admins to permanently delete records in the WORM vault when the customer requests it directly.",
-        "FAIL",
+        "Missing audit caveat",
+        "golden_warning",
+        "Users can edit their sent messages within 15 minutes.",
+        "WARNING",
+        "Edited messages retain the original version in the immutable audit log.",
     ),
     (
         "5",
-        "Disable Monitored Chat Channel",
-        "false_negative",
-        "To reduce cloud costs, the tenant may optionally turn off sync and logging for the WhatsApp Business channel.",
+        "Early archive erase (before retention)",
+        "golden_fail",
+        "Organization super admins may permanently delete archived messages from the server, freeing storage immediately.",
         "FAIL",
+        "Super-admins can force-delete warm-archive objects before the 7-year SEC window without court orders.",
     ),
     (
         "6",
-        "Audit Trail Modification",
-        "false_negative",
-        "Support staff may edit the content of historical SMS messages to fix typos before exporting a report.",
+        "Compliance sync disabled (subtle trap)",
+        "golden_fail",
+        "Admins can disable the compliance sync pipeline during maintenance windows.",
         "FAIL",
+        "Sync pipelines can be paused by tenant admins, halting data flow to the SEC vault.",
     ),
 ]
+
+
+def _ensure_test_cases_prd_context(conn: sqlite3.Connection) -> None:
+    cur = conn.execute("PRAGMA table_info(test_cases)")
+    cols = {row[1] for row in cur.fetchall()}
+    if "prd_context" not in cols:
+        conn.execute("ALTER TABLE test_cases ADD COLUMN prd_context TEXT NOT NULL DEFAULT ''")
 
 
 def _ensure_evaluation_log_extra_columns(conn: sqlite3.Connection) -> None:
@@ -80,10 +95,12 @@ def init_db() -> None:
                 title TEXT NOT NULL,
                 category TEXT NOT NULL,
                 text_chunk TEXT NOT NULL,
-                expected_verdict TEXT NOT NULL
+                expected_verdict TEXT NOT NULL,
+                prd_context TEXT NOT NULL DEFAULT ''
             )
             """
         )
+        _ensure_test_cases_prd_context(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS evaluation_logs (
@@ -106,17 +123,15 @@ def init_db() -> None:
 
 
 def seed_data() -> None:
-    """Insert seed rows only when `test_cases` is empty."""
+    """Upsert the 6 golden cases (ids 1–6) on every startup; keeps UI/API/DB aligned."""
     conn = sqlite3.connect(DB_PATH)
     try:
-        cur = conn.execute("SELECT COUNT(*) FROM test_cases")
-        count = cur.fetchone()[0]
-        if count > 0:
-            return
+        _ensure_test_cases_prd_context(conn)
         conn.executemany(
             """
-            INSERT INTO test_cases (id, title, category, text_chunk, expected_verdict)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO test_cases
+            (id, title, category, text_chunk, expected_verdict, prd_context)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             _SEED_ROWS,
         )
@@ -177,7 +192,8 @@ def fetch_test_case_by_id(item_id: str) -> dict | None:
     try:
         cur = conn.execute(
             """
-            SELECT id, title, category, text_chunk, expected_verdict
+            SELECT id, title, category, text_chunk, expected_verdict,
+                   COALESCE(prd_context, '') AS prd_context
             FROM test_cases
             WHERE id = ?
             """,
