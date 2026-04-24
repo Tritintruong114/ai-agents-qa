@@ -4,9 +4,14 @@ import { GoldenExpectedBadge } from "@/components/evaluation/Badges";
 type Props = {
   selectedId: string;
   onSelectId: (id: string) => void;
+  caseSwitchDisabled?: boolean;
 };
 
-export function GoldenDatasetSidebar({ selectedId, onSelectId }: Props) {
+export function GoldenDatasetSidebar({
+  selectedId,
+  onSelectId,
+  caseSwitchDisabled = false,
+}: Props) {
   return (
     <aside className="flex min-h-0 min-w-0 flex-col border-b border-neutral-200 bg-neutral-50 lg:border-b-0 lg:border-r">
       <div className="border-b border-neutral-200 px-2.5 py-2">
@@ -28,11 +33,14 @@ export function GoldenDatasetSidebar({ selectedId, onSelectId }: Props) {
               <li key={tc.id}>
                 <button
                   type="button"
+                  disabled={caseSwitchDisabled && !active}
                   onClick={() => onSelectId(tc.id)}
                   className={`w-full min-w-0 rounded-md border px-2 py-2 text-left transition ${
                     active
                       ? "border-[#0066ff] bg-white"
-                      : "border-transparent bg-white/80 hover:border-neutral-200 hover:bg-white"
+                      : caseSwitchDisabled
+                        ? "cursor-not-allowed border-transparent bg-white/50 opacity-60"
+                        : "border-transparent bg-white/80 hover:border-neutral-200 hover:bg-white"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1">

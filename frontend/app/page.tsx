@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AntiPatternTab } from "@/components/AntiPatternTab";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { DataContractsTab } from "@/components/DataContractsTab";
@@ -11,13 +11,14 @@ import { MainTabBar } from "@/components/MainTabBar";
 import { PresentationTab } from "@/components/PresentationTab";
 import { PromptEngineeringTab } from "@/components/PromptEngineeringTab";
 import { PublishFooter } from "@/components/PublishFooter";
+import { useEvaluationRun } from "@/context/EvaluationRunContext";
 import { useDashboardBootstrap } from "@/hooks/useDashboardBootstrap";
-import { useStabilityRunner } from "@/hooks/useStabilityRunner";
 import {
   API_BASE,
   DEFAULT_STABILITY_RUN_COUNT,
   TEST_CASES,
 } from "@/lib/constants";
+import { fetchTestCaseGoldenContent } from "@/lib/test-case-api";
 import {
   clearStoredSystemPrompt,
   saveStoredSystemPrompt,
@@ -26,14 +27,14 @@ import {
   createInitialVariant,
   isAllRunsMatchExpected,
 } from "@/lib/evaluation-helpers";
-import type {
-  AntiPatternRow,
-  AppMode,
-  MainTab,
-  VariantState,
-} from "@/lib/types";
+import type { AntiPatternRow, AppMode, MainTab, VariantState } from "@/lib/types";
 
 export default function Home() {
+  const {
+    startStabilityRun,
+    blockVariantResetOnCaseChange,
+  } = useEvaluationRun();
+
   const [appMode, setAppMode] = useState<AppMode>("presentation");
   const [mainTab, setMainTab] = useState<MainTab>("evaluation");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -53,13 +54,25 @@ export default function Home() {
   const [antiPatternLoading, setAntiPatternLoading] = useState(false);
   const [antiPatternError, setAntiPatternError] = useState<string | null>(null);
 
+  const [goldenFromApi, setGoldenFromApi] = useState<
+    Record<string, { prd_context: string; text_chunk: string }>
+  >({});
+  const [goldenContentLoading, setGoldenContentLoading] = useState(false);
+  const [goldenContentFetchError, setGoldenContentFetchError] = useState<
+    string | null
+  >(null);
+
   const demoActive = appMode === "demo";
+  const runsBusy = variantA.loading || variantB.loading;
+  const skipVariantReset =
+    runsBusy || blockVariantResetOnCaseChange;
 
   useDashboardBootstrap({
     demoActive,
     mainTab,
     selectedId,
     stabilityRunCount,
+    skipVariantReset,
     setSystemPrompt,
     setVariantA,
     setVariantB,
@@ -73,15 +86,60 @@ export default function Home() {
     [selectedId],
   );
 
-  const runsBusy = variantA.loading || variantB.loading;
-  const runStabilityVariant = useStabilityRunner(
-    selected,
-    setVariantA,
-    setVariantB,
+  useEffect(() => {
+    if (!demoActive || !selected?.id) return;
+    let cancelled = false;
+    setGoldenContentLoading(true);
+    setGoldenContentFetchError(null);
+    fetchTestCaseGoldenContent(selected.id)
+      .then((data) => {
+        if (cancelled) return;
+        setGoldenFromApi((prev) => ({
+          ...prev,
+          [data.id]: {
+            prd_context: data.prd_context,
+            text_chunk: data.text_chunk,
+          },
+        }));
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setGoldenContentFetchError(
+          e instanceof Error ? e.message : "Could not load case content.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setGoldenContentLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [demoActive, selected?.id]);
+
+  const selectedForRun = useMemo(() => {
+    if (!selected) return null;
+    const api = goldenFromApi[selected.id];
+    if (!api) return selected;
+    return {
+      ...selected,
+      prdContext: api.prd_context,
+      draftText: api.text_chunk,
+    };
+  }, [selected, goldenFromApi]);
+
+  const handleGoldenContentSaved = useCallback(
+    (prd_context: string, text_chunk: string) => {
+      if (!selected) return;
+      setGoldenFromApi((prev) => ({
+        ...prev,
+        [selected.id]: { prd_context, text_chunk },
+      }));
+    },
+    [selected],
   );
 
   const publishDisabled = useMemo(() => {
-    if (!selected) return true;
+    if (!selectedForRun) return true;
     if (variantA.loading) return true;
     if (abTestingMode && variantB.loading) return true;
     if (variantA.error || (abTestingMode && variantB.error)) return true;
@@ -90,7 +148,10 @@ export default function Home() {
       variantA.progress >= stabilityRunCount;
     if (
       !lenOkA ||
-      !isAllRunsMatchExpected(variantA.runsHistory, selected.expectedVerdict)
+      !isAllRunsMatchExpected(
+        variantA.runsHistory,
+        selectedForRun.expectedVerdict,
+      )
     )
       return true;
     if (abTestingMode) {
@@ -99,12 +160,15 @@ export default function Home() {
         variantB.progress >= stabilityRunCount;
       if (
         !lenOkB ||
-        !isAllRunsMatchExpected(variantB.runsHistory, selected.expectedVerdict)
+        !isAllRunsMatchExpected(
+          variantB.runsHistory,
+          selectedForRun.expectedVerdict,
+        )
       )
         return true;
     }
     return false;
-  }, [selected, variantA, variantB, abTestingMode, stabilityRunCount]);
+  }, [selectedForRun, variantA, variantB, abTestingMode, stabilityRunCount]);
 
   const persistSystemPromptChange = useCallback((value: string) => {
     setSystemPrompt(value);
@@ -128,21 +192,27 @@ export default function Home() {
 
   const handleRunVariant = useCallback(
     (which: "a" | "b") => {
+      if (!selectedForRun) return;
       const v = which === "a" ? variantA : variantB;
-      runStabilityVariant(
+      startStabilityRun({
         which,
-        v.temperature,
-        stabilityRunCount,
+        testCase: selectedForRun,
+        runCount: stabilityRunCount,
         systemPrompt,
-        v.openaiModel,
-      );
+        temperature: v.temperature,
+        openaiModel: v.openaiModel,
+        setVariant: which === "a" ? setVariantA : setVariantB,
+      });
     },
     [
-      runStabilityVariant,
+      selectedForRun,
       variantA,
       variantB,
       stabilityRunCount,
       systemPrompt,
+      startStabilityRun,
+      setVariantA,
+      setVariantB,
     ],
   );
 
@@ -170,6 +240,7 @@ export default function Home() {
             <GoldenDatasetSidebar
               selectedId={selectedId}
               onSelectId={setSelectedId}
+              caseSwitchDisabled={runsBusy}
             />
 
             <section className="flex min-h-[70vh] flex-col bg-white">
@@ -191,11 +262,14 @@ export default function Home() {
                     loading={antiPatternLoading}
                     error={antiPatternError}
                   />
-                ) : !selected ? (
+                ) : !selectedForRun ? (
                   <p className="text-sm text-neutral-600">Select a test case.</p>
                 ) : (
                   <EvaluationTab
-                    selected={selected}
+                    selected={selectedForRun}
+                    goldenContentLoading={goldenContentLoading}
+                    goldenContentFetchError={goldenContentFetchError}
+                    onGoldenContentSaved={handleGoldenContentSaved}
                     abTestingMode={abTestingMode}
                     stabilityRunCount={stabilityRunCount}
                     variantA={variantA}

@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   evaluationLogToPayload,
   formatStabilityRemainderLine,
@@ -10,11 +10,14 @@ import {
   OPENAI_EVAL_MODEL_OPTIONS,
   type TestCase,
 } from "@/lib/constants";
-import type { EvaluatePayload, VariantState } from "@/lib/types";
+import { useEvaluationRun } from "@/context/EvaluationRunContext";
+import type { CompletedStabilityRunRecord, EvaluatePayload, VariantState } from "@/lib/types";
+import { CompletedStabilityRunModal } from "./CompletedStabilityRunModal";
 import { EvaluationTraceDashboard } from "./EvaluationTraceDashboard";
 import { StabilityDots } from "./StabilityDots";
 
 type Props = {
+  which: "a" | "b";
   label: string;
   testCase: TestCase;
   state: VariantState;
@@ -26,6 +29,7 @@ type Props = {
 };
 
 export function JudgeVariantPanel({
+  which,
   label,
   testCase,
   state,
@@ -36,6 +40,29 @@ export function JudgeVariantPanel({
   onSelectSnapshotRun,
 }: Props) {
   const modelFieldId = useId();
+  const {
+    activeRunA,
+    activeRunB,
+    completedRuns,
+    pauseStabilityRun,
+    resumeStabilityRun,
+    cancelStabilityRun,
+  } = useEvaluationRun();
+  const [historyModal, setHistoryModal] =
+    useState<CompletedStabilityRunRecord | null>(null);
+
+  const activeMeta = which === "a" ? activeRunA : activeRunB;
+  const isThisJobActive = Boolean(
+    activeMeta &&
+      activeMeta.testCaseId === testCase.id &&
+      activeMeta.which === which,
+  );
+
+  const recentForVariant = useMemo(
+    () => completedRuns.filter((r) => r.which === which).slice(0, 10),
+    [completedRuns, which],
+  );
+
   const busy = state.loading;
   const n = Math.max(runCount, 1);
   const golden = testCase.expectedVerdict;
@@ -53,36 +80,76 @@ export function JudgeVariantPanel({
 
   const snapshotDone =
     !busy && !state.error && state.progress >= n && state.runsHistory.length >= n;
-  const snapIdx = snapshotDone ? resolvedSnapshotIndex(state) : n - 1;
-  const snapLog = snapshotDone ? state.runsHistory[snapIdx] : null;
-  const snapshotEval: EvaluatePayload | null = snapLog
-    ? evaluationLogToPayload(snapLog)
-    : state.evaluationResult;
+  const viewIdx = resolvedSnapshotIndex(state);
+  const viewLog = state.runsHistory[viewIdx] ?? null;
+  const viewEval: EvaluatePayload | null = viewLog
+    ? evaluationLogToPayload(viewLog)
+    : null;
+  const inFlightIndex =
+    busy && state.progress > 0
+      ? Math.min(state.progress - 1, n - 1)
+      : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-neutral-200 bg-neutral-50/80">
       <div className="border-b border-neutral-200 bg-white/90 px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-black">{label}</h3>
-          <button
-            type="button"
-            onClick={onRun}
-            disabled={busy}
-            className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#0066ff] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0052cc] disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 sm:px-4 sm:text-sm"
-          >
-            {busy ? (
-              <span className="flex items-center gap-2">
-                <span
-                  className="inline-block size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-                  aria-hidden
-                />
-                Evaluating {state.progress}/{n}…
-              </span>
-            ) : (
-              `Run ${n}x Stability Test`
-            )}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {isThisJobActive && activeMeta ? (
+              <>
+                {activeMeta.phase === "running" ? (
+                  <button
+                    type="button"
+                    onClick={() => pauseStabilityRun(which)}
+                    className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-neutral-800 shadow-sm hover:bg-neutral-50"
+                  >
+                    Pause
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => resumeStabilityRun(which)}
+                    className="rounded-lg border border-emerald-600 bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
+                  >
+                    Resume
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => cancelStabilityRun(which)}
+                  className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-900 hover:bg-red-100"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              onClick={onRun}
+              disabled={busy}
+              className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#0066ff] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0052cc] disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-500 sm:px-4 sm:text-sm"
+            >
+              {busy ? (
+                <span className="flex items-center gap-2">
+                  <span
+                    className="inline-block size-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    aria-hidden
+                  />
+                  Evaluating {state.progress}/{n}…
+                </span>
+              ) : (
+                `Run ${n}x Stability Test`
+              )}
+            </button>
+          </div>
         </div>
+        {isThisJobActive ? (
+          <p className="mt-2 text-[10px] leading-snug text-neutral-500">
+            Pause takes effect after the current judge request completes. Cancel stops the
+            in-flight request.
+          </p>
+        ) : null}
         <div className="mt-3">
           <label
             htmlFor={modelFieldId}
@@ -151,8 +218,9 @@ export function JudgeVariantPanel({
               history={state.runsHistory}
               runCount={n}
               onSelectRunIndex={onSelectSnapshotRun}
-              activeIndex={snapIdx}
-              highlightActive={snapshotDone}
+              activeIndex={viewIdx}
+              highlightActive={viewLog !== null}
+              inFlightIndex={inFlightIndex}
             />
           </div>
           {stabilityPct !== null && (
@@ -170,6 +238,44 @@ export function JudgeVariantPanel({
             </p>
           )}
         </div>
+
+        {recentForVariant.length > 0 ? (
+          <div className="mt-3 border-t border-neutral-100 pt-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Saved batches ({label})
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {recentForVariant.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setHistoryModal(r)}
+                  className="max-w-full truncate rounded-full border border-neutral-200 bg-neutral-50/90 px-2.5 py-1 text-left text-[10px] font-medium text-neutral-800 hover:border-[#0066ff] hover:bg-blue-50/60"
+                >
+                  <span className="font-mono text-neutral-500">#{r.testCaseId}</span>{" "}
+                  <span className="font-mono text-neutral-600">
+                    {r.stabilityRunCount}×
+                  </span>{" "}
+                  <span
+                    className={
+                      r.outcome === "completed"
+                        ? "text-emerald-700"
+                        : r.outcome === "cancelled"
+                          ? "text-amber-800"
+                          : "text-red-800"
+                    }
+                  >
+                    {r.outcome}
+                  </span>
+                  <span className="text-neutral-500">
+                    {" "}
+                    · {new Date(r.finishedAt).toLocaleTimeString()}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
@@ -210,35 +316,35 @@ export function JudgeVariantPanel({
           </div>
         )}
 
-        {snapshotEval && snapshotDone && (
-          <details className="group rounded-xl border border-neutral-200 bg-white shadow-sm">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-neutral-900 transition hover:bg-neutral-50 [&::-webkit-details-marker]:hidden">
-              <span className="min-w-0 truncate">
+        {viewEval && viewLog ? (
+          <div
+            key={viewIdx}
+            className="rounded-xl border border-neutral-200 bg-white shadow-sm"
+          >
+            <div className="border-b border-neutral-100 px-3 py-2.5 text-sm font-semibold text-neutral-900">
+              <span className="min-w-0">
                 Evaluation trace
                 <span className="font-normal text-neutral-500">
                   {" "}
-                  · snapshot run {snapIdx + 1}/{n}
+                  · run {viewIdx + 1}/{n}
+                  {!snapshotDone ? (
+                    <span className="text-[#0066ff]"> (batch in progress)</span>
+                  ) : null}
                 </span>
               </span>
-              <span
-                className="shrink-0 text-neutral-400 transition group-open:rotate-180"
-                aria-hidden
-              >
-                ▼
-              </span>
-            </summary>
-            <div className="border-t border-neutral-100 px-3 pb-3 pt-1">
+            </div>
+            <div className="px-3 pb-3 pt-1">
               <EvaluationTraceDashboard
                 testCase={testCase}
-                runIndex1Based={snapIdx + 1}
+                runIndex1Based={viewIdx + 1}
                 runCount={n}
                 temperature={state.temperature}
                 stabilityPct={stabilityPct}
                 goldenMatchCount={goldenMatchCount}
                 stabilityBreakdown={verdictBreakdown}
-                data={snapshotEval}
-                snapshotPromptTokens={snapLog?.prompt_tokens ?? 0}
-                snapshotCompletionTokens={snapLog?.completion_tokens ?? 0}
+                data={viewEval}
+                snapshotPromptTokens={viewLog.prompt_tokens ?? 0}
+                snapshotCompletionTokens={viewLog.completion_tokens ?? 0}
                 totalPromptTokens={state.totalTokens.prompt}
                 totalCompletionTokens={state.totalTokens.completion}
                 modelLabel={
@@ -248,11 +354,11 @@ export function JudgeVariantPanel({
                 }
               />
             </div>
-          </details>
-        )}
+          </div>
+        ) : null}
       </div>
 
-      {!(snapshotEval && snapshotDone) ? (
+      {!viewEval ? (
         <div className="border-t border-neutral-200 bg-neutral-50 px-4 py-2.5 text-[11px] text-neutral-700">
           <div className="flex flex-wrap items-center gap-3">
             <span>
@@ -275,6 +381,13 @@ export function JudgeVariantPanel({
           ) : null}
         </div>
       ) : null}
+
+      <CompletedStabilityRunModal
+        key={historyModal?.id ?? "closed"}
+        open={historyModal !== null}
+        record={historyModal}
+        onClose={() => setHistoryModal(null)}
+      />
     </div>
   );
 }

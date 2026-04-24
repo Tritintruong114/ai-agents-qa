@@ -100,3 +100,25 @@ export type MainTab =
   | "promptEngineering"
   | "antiPatterns"
   | "dataContracts";
+
+/** Global stability job: pause applies between 1..N sequential evaluations. */
+export type ActiveStabilityRun = {
+  id: string;
+  which: "a" | "b";
+  testCaseId: string;
+  testCaseTitle: string;
+  stabilityRunCount: number;
+  progress: number;
+  phase: "running" | "paused";
+};
+
+export type CompletedStabilityRunRecord = {
+  id: string;
+  which: "a" | "b";
+  testCaseId: string;
+  testCaseTitle: string;
+  stabilityRunCount: number;
+  variantSnapshot: VariantState;
+  finishedAt: number;
+  outcome: "completed" | "cancelled" | "error";
+};

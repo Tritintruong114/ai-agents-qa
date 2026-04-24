@@ -90,13 +90,23 @@ export function createInitialVariant(
   };
 }
 
+/**
+ * Index of the run to show in the trace panel. Honors explicit
+ * `snapshotRunIndex` when set; otherwise the last *completed* slot
+ * (so in-progress batches default to the newest finished run, not an empty last slot).
+ */
 export function resolvedSnapshotIndex(state: VariantState): number {
   const n = state.runsHistory.length;
   if (n === 0) return 0;
   if (state.snapshotRunIndex !== null) {
     return Math.min(Math.max(0, state.snapshotRunIndex), n - 1);
   }
-  return n - 1;
+  for (let i = n - 1; i >= 0; i--) {
+    if (state.runsHistory[i] !== null) {
+      return i;
+    }
+  }
+  return 0;
 }
 
 export function evaluationLogToPayload(log: EvaluationLog): EvaluatePayload {

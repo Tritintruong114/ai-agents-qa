@@ -68,6 +68,19 @@ def _ensure_test_cases_prd_context(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE test_cases ADD COLUMN prd_context TEXT NOT NULL DEFAULT ''")
 
 
+def _ensure_golden_case_content_overrides(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS golden_case_content_overrides (
+            test_case_id TEXT PRIMARY KEY,
+            prd_context TEXT NOT NULL,
+            text_chunk TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+
+
 def _ensure_evaluation_log_extra_columns(conn: sqlite3.Connection) -> None:
     """Add columns for older DBs (confidence, routing) without losing data."""
     cur = conn.execute("PRAGMA table_info(evaluation_logs)")
@@ -101,6 +114,7 @@ def init_db() -> None:
             """
         )
         _ensure_test_cases_prd_context(conn)
+        _ensure_golden_case_content_overrides(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS evaluation_logs (
@@ -127,6 +141,7 @@ def seed_data() -> None:
     conn = sqlite3.connect(DB_PATH)
     try:
         _ensure_test_cases_prd_context(conn)
+        _ensure_golden_case_content_overrides(conn)
         conn.executemany(
             """
             INSERT OR REPLACE INTO test_cases
@@ -186,16 +201,30 @@ def insert_evaluation_log(
 
 
 def fetch_test_case_by_id(item_id: str) -> dict | None:
-    """Return one row as a plain dict, or None if not found."""
+    """Return one merged row (canonical + optional golden content overrides), or None."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
+        _ensure_golden_case_content_overrides(conn)
         cur = conn.execute(
             """
-            SELECT id, title, category, text_chunk, expected_verdict,
-                   COALESCE(prd_context, '') AS prd_context
-            FROM test_cases
-            WHERE id = ?
+            SELECT
+                t.id,
+                t.title,
+                t.category,
+                t.expected_verdict,
+                CASE
+                    WHEN o.test_case_id IS NOT NULL THEN o.prd_context
+                    ELSE COALESCE(t.prd_context, '')
+                END AS prd_context,
+                CASE
+                    WHEN o.test_case_id IS NOT NULL THEN o.text_chunk
+                    ELSE t.text_chunk
+                END AS text_chunk
+            FROM test_cases t
+            LEFT JOIN golden_case_content_overrides o
+                ON o.test_case_id = t.id
+            WHERE t.id = ?
             """,
             (item_id,),
         )
@@ -203,6 +232,35 @@ def fetch_test_case_by_id(item_id: str) -> dict | None:
         if row is None:
             return None
         return {k: row[k] for k in row.keys()}
+    finally:
+        conn.close()
+
+
+def upsert_golden_case_content_override(
+    test_case_id: str,
+    prd_context: str,
+    text_chunk: str,
+) -> None:
+    """Persist user-edited PRD + draft; survives seed_data() which only replaces test_cases."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        _ensure_golden_case_content_overrides(conn)
+        cur = conn.execute("SELECT 1 FROM test_cases WHERE id = ?", (test_case_id,))
+        if cur.fetchone() is None:
+            raise ValueError(f"Unknown test_case_id: {test_case_id!r}")
+        conn.execute(
+            """
+            INSERT INTO golden_case_content_overrides
+                (test_case_id, prd_context, text_chunk, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+            ON CONFLICT(test_case_id) DO UPDATE SET
+                prd_context = excluded.prd_context,
+                text_chunk = excluded.text_chunk,
+                updated_at = excluded.updated_at
+            """,
+            (test_case_id, prd_context, text_chunk),
+        )
+        conn.commit()
     finally:
         conn.close()
 

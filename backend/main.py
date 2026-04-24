@@ -16,6 +16,7 @@ from database import (
     init_db,
     insert_evaluation_log,
     seed_data,
+    upsert_golden_case_content_override,
 )
 from readability import evaluate_readability_dimension, merge_qa_with_readability
 
@@ -159,6 +160,13 @@ _ITEM_ALIASES = {
     "fn-1": "5",
     "fn-2": "6",
 }
+
+
+class GoldenContentBody(BaseModel):
+    """User-saved PRD + documentation draft for a golden case (persisted in SQLite overrides)."""
+
+    prd_context: str = Field(..., description="Full PRD / spec text for <PRD_CONTEXT>.")
+    text_chunk: str = Field(..., description="Documentation draft for <DRAFT>.")
 
 
 class EvaluateBody(BaseModel):
@@ -432,6 +440,59 @@ async def api_anti_patterns(
     ),
 ):
     return get_anti_patterns(limit)
+
+
+@app.get("/api/test-cases/{item_id}")
+async def get_test_case(item_id: str):
+    """Merged golden case (canonical metadata + optional user overrides for PRD and draft)."""
+    key = _resolve_item_key(item_id)
+    item = fetch_test_case_by_id(key)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No item with id={item_id!r}. Use 1–6 (or aliases fp-1…fp-3, tp-1, fn-1, fn-2).",
+        )
+    return {
+        "id": item["id"],
+        "title": item.get("title", ""),
+        "category": item.get("category", ""),
+        "expected_verdict": item.get("expected_verdict", ""),
+        "prd_context": item.get("prd_context", ""),
+        "text_chunk": item.get("text_chunk", ""),
+    }
+
+
+@app.put("/api/test-cases/{item_id}/golden-content")
+async def put_test_case_golden_content(item_id: str, body: GoldenContentBody):
+    key = _resolve_item_key(item_id)
+    item = fetch_test_case_by_id(key)
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No item with id={item_id!r}. Use 1–6 (or aliases fp-1…fp-3, tp-1, fn-1, fn-2).",
+        )
+    try:
+        upsert_golden_case_content_override(
+            key,
+            str(body.prd_context),
+            str(body.text_chunk),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    merged = fetch_test_case_by_id(key)
+    if merged is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Could not read case after save.",
+        )
+    return {
+        "id": merged["id"],
+        "title": merged.get("title", ""),
+        "category": merged.get("category", ""),
+        "expected_verdict": merged.get("expected_verdict", ""),
+        "prd_context": merged.get("prd_context", ""),
+        "text_chunk": merged.get("text_chunk", ""),
+    }
 
 
 def _sse_response(gen: AsyncIterator[str]) -> StreamingResponse:

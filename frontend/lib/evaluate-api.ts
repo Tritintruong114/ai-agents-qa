@@ -15,12 +15,21 @@ import type {
 export async function consumeEvaluateSSE(
   res: Response,
   onEvent: (data: Record<string, unknown>) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const reader = res.body?.getReader();
   if (!reader) throw new Error("Could not read response body.");
   const decoder = new TextDecoder();
   let buffer = "";
   while (true) {
+    if (signal?.aborted) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* ignore */
+      }
+      throw new DOMException("Aborted", "AbortError");
+    }
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -46,6 +55,7 @@ export async function runSingleEvaluation(
   onReasoningDelta?: (delta: string) => void,
   prdContext?: string,
   openaiModel: string = DEFAULT_OPENAI_MODEL,
+  signal?: AbortSignal,
 ): Promise<{
   evaluation: EvaluatePayload | null;
   meta: StreamMeta | null;
@@ -73,6 +83,7 @@ export async function runSingleEvaluation(
         ? { prd_context: prdContext }
         : {}),
     }),
+    signal,
   });
 
   if (!res.ok) {
@@ -132,7 +143,7 @@ export async function runSingleEvaluation(
         };
       }
     }
-  });
+  }, signal);
 
   if (err || !evaluation) {
     return { evaluation, meta, error: err, log: null };

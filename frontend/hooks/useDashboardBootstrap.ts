@@ -10,6 +10,8 @@ type Args = {
   mainTab: MainTab;
   selectedId: string;
   stabilityRunCount: number;
+  /** When true, do not reset judge variants (stability in flight or paused). */
+  skipVariantReset: boolean;
   setSystemPrompt: Dispatch<SetStateAction<string>>;
   setVariantA: Dispatch<SetStateAction<VariantState>>;
   setVariantB: Dispatch<SetStateAction<VariantState>>;
@@ -23,6 +25,7 @@ export function useDashboardBootstrap({
   mainTab,
   selectedId,
   stabilityRunCount,
+  skipVariantReset,
   setSystemPrompt,
   setVariantA,
   setVariantB,
@@ -88,7 +91,14 @@ export function useDashboardBootstrap({
   }, [setSystemPrompt]);
 
   useEffect(() => {
+    if (skipVariantReset) return;
     setVariantA(createInitialVariant(stabilityRunCount));
     setVariantB(createInitialVariant(stabilityRunCount));
-  }, [selectedId, stabilityRunCount, setVariantA, setVariantB]);
+  }, [
+    selectedId,
+    stabilityRunCount,
+    skipVariantReset,
+    setVariantA,
+    setVariantB,
+  ]);
 }
